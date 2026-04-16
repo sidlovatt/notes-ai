@@ -235,17 +235,18 @@ body { font-family: system-ui,-apple-system,sans-serif; background: var(--bg); c
     <div class="screen-logo">Notes <span>AI</span></div>
     <div class="screen-subtitle">One more step — add your Anthropic API key to enable AI note generation.</div>
     <div class="instructions">
-      <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:8px">How to get your free API key:</div>
+      <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:8px">How to get your free Gemini API key:</div>
       <ol>
-        <li>Go to <a href="https://console.anthropic.ic.com" target="_blank">console.anthropic.com</a></li>
-        <li>Create a free account (no credit card needed to start)</li>
-        <li>Click <strong>API Keys</strong> in the left sidebar</li>
-        <li>Click <strong>Create Key</strong>, give it a name</li>
-        <li>Copy the key (starts with <code>sk-ant-</code>) and paste it below</li>
+        <li>Go to <a href="https://aistudio.google.com" target="_blank">aistudio.google.com</a></li>
+        <li>Sign in with your Google account</li>
+        <li>Click <strong>Get API key</strong> in the left sidebar</li>
+        <li>Click <strong>Create API key</strong></li>
+        <li>Copy the key and paste it below</li>
       </ol>
+      <div style="margin-top:8px;font-size:12px;color:var(--muted)">The free tier includes 1,500 requests/day — more than enough for regular use. No credit card needed.</div>
     </div>
     <div id="apikey-error" class="screen-error"></div>
-    <input class="screen-input" type="password" id="apikey-input" placeholder="sk-ant-...">
+    <input class="screen-input" type="password" id="apikey-input" placeholder="AIza...">
     <button class="screen-btn dark" id="btn-save-apikey">Save and continue</button>
     <p class="screen-note">Your key is stored only in your browser. It never leaves your device<br>and is not shared with anyone.</p>
   </div>
@@ -752,6 +753,22 @@ Structure: ${fmts[selectedFmt]}
 Rules: First names only except in attendees. No em dashes. No emojis. No AI filler. Plain direct language. Do not invent anything. Be thorough with todos. Never truncate.`;
 }
 
+async function callGemini(apiKey, systemPrompt, userMsg) {
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      system_instruction: { parts: [{ text: systemPrompt }] },
+      contents: [{ role: 'user', parts: [{ text: userMsg }] }],
+      generationConfig: { maxOutputTokens: 8000, temperature: 0.3 }
+    })
+  });
+  if (res.status === 400 || res.status === 403) throw new Error('invalid_key');
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message);
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+}
+
 // ── Generate ──────────────────────────────────────────────────
 async function generate() {
   const apiKey = getApiKey();
@@ -765,15 +782,21 @@ async function generate() {
   btn.disabled=true;
   let dots=0;const ticker=setInterval(()=>{dots=(dots+1)%4;st.textContent='Generating'+'.'.repeat(dots);},400);
   try {
-    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:8000,stream:true,system:buildPrompt(),messages:[{role:'user',content:userMsg}]})});
-    if(res.status===401){clearInterval(ticker);st.textContent='Invalid API key.';localStorage.removeItem('anthropic_api_key');btn.disabled=false;return;}
-    const reader=res.body.getReader(),decoder=new TextDecoder();let raw='';
-    while(true){const{done,value}=await reader.read();if(done)break;const chunk=decoder.decode(value,{stream:true});for(const line of chunk.split('\n')){if(!line.startsWith('data: '))continue;const d=line.slice(6).trim();if(d==='[DONE]')continue;try{const ev=JSON.parse(d);if(ev.type==='content_block_delta'&&ev.delta?.text)raw+=ev.delta.text;}catch(e){}}}
+    const raw = await callGemini(apiKey, buildPrompt(), userMsg);
     clearInterval(ticker);
-    let parsed;try{parsed=extractJSON(raw);}catch(e){try{const fix=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:8000,system:'Return only corrected raw JSON. First char {, last char }.',messages:[{role:'user',content:`Fix:\n${raw}`}]})});const fd=await fix.json();parsed=extractJSON(fd.content.map(b=>b.text||'').join(''));}catch(e2){st.textContent='Parse error. Try again.';btn.disabled=false;return;}}
+    let parsed;
+    try { parsed=extractJSON(raw); }
+    catch(e) {
+      try { const fixed = await callGemini(apiKey, 'Return only corrected raw JSON. First char {, last char }. No fences.', `Fix this JSON:\n${raw}`); parsed=extractJSON(fixed); }
+      catch(e2) { st.textContent='Parse error. Try again.'; btn.disabled=false; return; }
+    }
     const note={id:Date.now(),date,time,loc,projectId,title:customTitle||(parsed.title||'Untitled note'),type:selectedFmt,tone:selectedTone,raw,parsed,transcript,speakerData:JSON.parse(JSON.stringify(speakerData)),originalTranscript:transcript};
     notes.unshift(note);await saveAll();renderProjects();renderNoteList();selectNote(note.id);closeImport();st.textContent='';
-  }catch(e){clearInterval(ticker);st.textContent=`Error: ${e.message||'unknown'}`;}
+  } catch(e) {
+    clearInterval(ticker);
+    if (e.message==='invalid_key') { st.textContent='Invalid API key.'; localStorage.removeItem('anthropic_api_key'); }
+    else st.textContent=`Error: ${e.message||'unknown'}`;
+  }
   btn.disabled=false;
 }
 
@@ -784,8 +807,7 @@ async function applyCorrection() {
   const correction=document.getElementById('corr-input').value.trim();if(!correction)return;
   const btn=document.getElementById('btn-correction');btn.disabled=true;btn.textContent='Updating…';
   try{
-    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:8000,system:'Update meeting notes JSON based on correction. Return only raw JSON. First char {, last char }.',messages:[{role:'user',content:`Notes:\n${activeNote.raw}\n\nCorrection:\n${correction}`}]})});
-    const data=await res.json();const raw=data.content.map(b=>b.text||'').join('');
+    const raw = await callGemini(apiKey, 'Update meeting notes JSON based on correction. Return only raw JSON. First char {, last char }. No markdown fences.', `Notes:\n${activeNote.raw}\n\nCorrection:\n${correction}`);
     const parsed=extractJSON(raw);activeNote.raw=raw;activeNote.parsed=parsed;
     if(parsed.title)activeNote.title=parsed.title;
     await saveAll();renderNoteList();selectNote(activeNote.id);document.getElementById('corr-input').value='';
@@ -901,8 +923,8 @@ function initEvents() {
   });
   document.getElementById('btn-save-apikey').addEventListener('click', () => {
     const key = document.getElementById('apikey-input').value.trim();
-    if (!key.startsWith('sk-ant-')) {
-      document.getElementById('apikey-error').textContent = 'Key should start with sk-ant-';
+    if (!key.startsWith('AIza')) {
+      document.getElementById('apikey-error').textContent = 'Key should start with AIza';
       document.getElementById('apikey-error').style.display = 'block';
       return;
     }
