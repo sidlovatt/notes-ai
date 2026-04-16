@@ -233,7 +233,7 @@ body { font-family: system-ui,-apple-system,sans-serif; background: var(--bg); c
 <div class="screen hidden" id="screen-apikey">
   <div class="screen-card">
     <div class="screen-logo">Notes <span>AI</span></div>
-    <div class="screen-subtitle">One more step — add your Anthropic API key to enable AI note generation.</div>
+    <div class="screen-subtitle">One more step — add your Gemini API key to enable AI note generation.</div>
     <div class="instructions">
       <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:8px">How to get your free Gemini API key:</div>
       <ol>
@@ -923,8 +923,8 @@ function initEvents() {
   });
   document.getElementById('btn-save-apikey').addEventListener('click', () => {
     const key = document.getElementById('apikey-input').value.trim();
-    if (!key.startsWith('AIza')) {
-      document.getElementById('apikey-error').textContent = 'Key should start with AIza';
+    if (!key || key.length < 10) {
+      document.getElementById('apikey-error').textContent = 'Please enter a valid API key';
       document.getElementById('apikey-error').style.display = 'block';
       return;
     }
