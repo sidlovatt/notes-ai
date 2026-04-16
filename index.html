@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Notes AI</title>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+
+<!-- Mammoth for .docx -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f4f4f2; --surface: #fff; --border: #e8e8e6; --border2: #f0f0ee;
+  --text: #1a1a18; --muted: #888; --faint: #bbb; --accent: #1a1a18;
+  --green: #3B6D11; --green-bg: #EAF3DE; --sidebar: #1a1a18;
+}
+body { font-family: system-ui,-apple-system,sans-serif; background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; display: flex; flex-direction: column; font-size: 13px; }
+
+/* ── Auth / Setup screens ── */
+.screen { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 200; }
+.screen.hidden { display: none; }
+.screen-card { background: var(--surface); border-radius: 16px; padding: 40px; width: 480px; box-shadow: 0 4px 32px rgba(0,0,0,0.10); }
+.screen-logo { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 6px; }
+.screen-logo span { color: var(--muted); font-weight: 400; }
+.screen-subtitle { font-size: 14px; color: var(--muted); margin-bottom: 28px; line-height: 1.6; }
+.screen-section { margin-bottom: 20px; }
+.screen-section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--faint); margin-bottom: 10px; }
+.screen-btn { width: 100%; font-family: inherit; font-size: 14px; padding: 11px 16px; border-radius: 9px; cursor: pointer; border: none; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 8px; transition: opacity 0.15s; }
+.screen-btn:hover { opacity: 0.85; }
+.screen-btn.google { background: #fff; color: #1a1a18; border: 0.5px solid var(--border); }
+.screen-btn.dark { background: var(--accent); color: #fff; }
+.screen-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.screen-input { width: 100%; font-size: 13px; font-family: inherit; padding: 9px 12px; border: 0.5px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); margin-bottom: 8px; }
+.screen-input:focus { outline: none; border-color: #888; background: var(--surface); }
+.instructions { background: #f9f9f7; border: 0.5px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; }
+.instructions ol { padding-left: 18px; }
+.instructions li { font-size: 13px; color: var(--muted); line-height: 1.8; }
+.instructions a { color: #4F86C6; text-decoration: none; }
+.instructions a:hover { text-decoration: underline; }
+.screen-note { font-size: 12px; color: var(--faint); text-align: center; margin-top: 12px; line-height: 1.6; }
+.screen-error { font-size: 12px; color: #A32D2D; background: #FCEBEB; padding: 8px 12px; border-radius: 7px; margin-bottom: 10px; display: none; }
+
+/* ── Top bar ── */
+.topbar { height: 46px; background: var(--surface); border-bottom: 0.5px solid var(--border); display: flex; align-items: center; padding: 0 14px; gap: 10px; flex-shrink: 0; }
+.topbar-logo { font-size: 14px; font-weight: 600; letter-spacing: -0.02em; }
+.topbar-logo span { color: var(--muted); font-weight: 400; }
+.topbar-spacer { flex: 1; }
+.tbtn { font-family: inherit; font-size: 12px; padding: 5px 12px; border-radius: 7px; cursor: pointer; border: 0.5px solid var(--border); background: transparent; color: var(--muted); }
+.tbtn:hover { border-color: #aaa; color: var(--text); }
+.tbtn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.tbtn.primary:hover { background: #333; }
+.tbtn:disabled { opacity: 0.4; cursor: not-allowed; }
+.user-pill { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
+.user-avatar { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; }
+.user-avatar-placeholder { width: 26px; height: 26px; border-radius: 50%; background: #e0e0de; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: #666; }
+
+/* ── Layout ── */
+.body-wrap { display: flex; flex: 1; overflow: hidden; }
+.proj-sidebar { width: 180px; background: var(--sidebar); color: #fff; display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden; }
+.proj-header { padding: 12px 14px 8px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #555; display: flex; align-items: center; justify-content: space-between; }
+.proj-add-btn { background: none; border: none; color: #555; cursor: pointer; font-size: 18px; line-height: 1; padding: 0 2px; }
+.proj-add-btn:hover { color: #aaa; }
+.proj-list { flex: 1; overflow-y: auto; }
+.proj-item { display: flex; align-items: center; gap: 8px; padding: 8px 14px; cursor: pointer; border-left: 2px solid transparent; color: #999; font-size: 12px; }
+.proj-item:hover { background: #252523; color: #ddd; }
+.proj-item.active { background: #252523; color: #fff; border-left-color: #fff; }
+.proj-item-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.proj-item-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.proj-item-count { font-size: 10px; color: #555; flex-shrink: 0; }
+.proj-item.active .proj-item-count { color: #888; }
+.proj-rm { background: none; border: none; color: #444; cursor: pointer; font-size: 12px; line-height: 1; padding: 0 2px; opacity: 0; flex-shrink: 0; }
+.proj-item:hover .proj-rm { opacity: 1; }
+.storage-bar-wrap { padding: 10px 14px; border-top: 0.5px solid #333; flex-shrink: 0; }
+.storage-track { background: #333; border-radius: 4px; height: 4px; margin-bottom: 4px; }
+.storage-fill { background: #4F86C6; height: 4px; border-radius: 4px; width: 0%; transition: width 0.3s; }
+.storage-info { font-size: 10px; color: #555; }
+
+/* ── Panes ── */
+.panes { display: grid; grid-template-columns: 220px 1fr 320px; flex: 1; overflow: hidden; }
+.pane { display: flex; flex-direction: column; overflow: hidden; border-right: 0.5px solid var(--border); }
+.pane:last-child { border-right: none; }
+.pane-header { padding: 10px 12px; border-bottom: 0.5px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+.pane-header-title { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.search-box { padding: 7px 10px; border-bottom: 0.5px solid var(--border); flex-shrink: 0; }
+.search-box input { width: 100%; font-size: 12px; font-family: inherit; padding: 5px 9px; border: 0.5px solid var(--border); border-radius: 7px; background: var(--bg); color: var(--text); }
+.search-box input:focus { outline: none; border-color: #aaa; }
+.pane-body { flex: 1; overflow-y: auto; }
+.note-card { padding: 10px 12px; border-bottom: 0.5px solid var(--border2); }
+.note-card:hover { background: #f9f9f7; }
+.note-card.active { background: #f0f0ee; }
+.nc-proj { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px; }
+.nc-type { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--faint); margin-bottom: 2px; }
+.nc-title { font-size: 13px; font-weight: 500; margin-bottom: 2px; line-height: 1.3; }
+.nc-meta { font-size: 11px; color: var(--muted); }
+.nc-preview { font-size: 11px; color: var(--faint); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.empty-list { padding: 28px 14px; text-align: center; font-size: 13px; color: var(--faint); line-height: 1.6; }
+.note-tabs { display: flex; border-bottom: 0.5px solid var(--border); flex-shrink: 0; padding: 0 4px; }
+.note-tab { font-size: 12px; padding: 9px 11px; background: none; border: none; border-bottom: 2px solid transparent; color: var(--muted); cursor: pointer; font-family: inherit; margin-bottom: -0.5px; }
+.note-tab.active { color: var(--text); border-bottom-color: var(--text); font-weight: 500; }
+.ntb { display: none; flex: 1; overflow-y: auto; padding: 18px 20px; }
+.ntb.active { display: block; }
+.empty-note { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--faint); gap: 8px; }
+.ns { margin-bottom: 18px; }
+.ns-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--faint); margin-bottom: 7px; }
+.ns-body { font-size: 13px; line-height: 1.75; }
+.ns-body p { margin-bottom: 4px; }
+.ns-body ul { list-style: none; padding: 0; }
+.ns-body ul li { padding: 2px 0 2px 13px; position: relative; line-height: 1.6; }
+.ns-body ul li::before { content: "•"; position: absolute; left: 0; color: var(--faint); }
+.todo-item { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; border-bottom: 0.5px solid var(--border2); }
+.todo-item:last-child { border-bottom: none; }
+.todo-cb { width: 14px; height: 14px; border: 1.5px solid #ccc; border-radius: 3px; flex-shrink: 0; margin-top: 2px; cursor: pointer; position: relative; }
+.todo-cb.done { background: var(--green); border-color: var(--green); }
+.todo-cb.done::after { content: '✓'; position: absolute; color: #fff; font-size: 9px; top: 0; left: 1px; }
+.todo-text { flex: 1; font-size: 13px; line-height: 1.5; }
+.todo-text.done { text-decoration: line-through; color: var(--faint); }
+.todo-owner { font-size: 11px; color: var(--muted); margin-top: 1px; }
+.todo-deadline { font-size: 11px; color: #b45309; background: #FEF3C7; padding: 1px 6px; border-radius: 4px; display: inline-block; margin-top: 2px; }
+.note-meta-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; align-items: center; }
+.meta-chip { font-size: 12px; color: var(--muted); }
+.type-badge { font-size: 11px; font-weight: 500; padding: 2px 7px; border-radius: 10px; }
+.type-meeting { background: #E8F0FE; color: #1a56db; }
+.type-interview { background: #FDE8FF; color: #9333ea; }
+.type-general { background: #f0f0ee; color: #555; }
+.type-actions { background: #FEF3C7; color: #b45309; }
+.proj-badge { font-size: 11px; font-weight: 500; padding: 2px 7px; border-radius: 10px; color: #fff; }
+.corr-wrap { border-top: 0.5px solid var(--border); padding: 10px 14px; flex-shrink: 0; background: #fafaf8; }
+.corr-hint { font-size: 11px; color: var(--faint); margin-bottom: 6px; }
+.corr-row { display: flex; gap: 6px; }
+.corr-input { flex: 1; font-size: 12px; font-family: inherit; padding: 6px 9px; border: 0.5px solid var(--border); border-radius: 7px; background: var(--surface); resize: none; min-height: 40px; color: var(--text); }
+.corr-input:focus { outline: none; border-color: #aaa; }
+.export-row { display: flex; gap: 5px; flex-wrap: wrap; padding: 8px 14px; border-top: 0.5px solid var(--border); background: #fafaf8; flex-shrink: 0; align-items: center; }
+.exp-btn { font-size: 11px; padding: 4px 9px; border: 0.5px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--muted); cursor: pointer; font-family: inherit; }
+.exp-btn:hover { border-color: #aaa; color: var(--text); }
+.exp-btn.email-btn { border-color: #4F86C6; color: #4F86C6; }
+.tx-header { padding: 10px 12px; border-bottom: 0.5px solid var(--border); flex-shrink: 0; display: flex; align-items: center; gap: 8px; }
+.tx-title { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; flex: 1; }
+.tx-search { font-size: 12px; font-family: inherit; padding: 4px 9px; border: 0.5px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); width: 120px; }
+.tx-search:focus { outline: none; border-color: #aaa; }
+.tx-body { flex: 1; overflow-y: auto; padding: 10px 12px; }
+.tx-empty { color: var(--faint); padding: 24px; text-align: center; }
+.tx-block { margin-bottom: 10px; }
+.tx-speaker { font-size: 11px; font-weight: 600; margin-bottom: 2px; display: flex; align-items: center; gap: 5px; }
+.sp-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.tx-text { font-size: 12px; color: #333; line-height: 1.6; padding-left: 12px; }
+.tx-text mark { background: #FFF3CD; border-radius: 2px; padding: 0 1px; }
+
+/* ── Modals ── */
+.overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
+.overlay.hidden { display: none; }
+.modal { background: var(--surface); border-radius: 14px; width: 540px; max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 40px rgba(0,0,0,0.18); }
+.modal-sm { width: 380px; }
+.modal-header { padding: 16px 20px 12px; border-bottom: 0.5px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+.modal-title { font-size: 14px; font-weight: 500; }
+.modal-close { background: none; border: none; font-size: 20px; color: var(--muted); cursor: pointer; line-height: 1; padding: 2px 6px; border-radius: 6px; }
+.modal-body { padding: 18px 20px; }
+.modal-footer { padding: 12px 20px; border-top: 0.5px solid var(--border); display: flex; gap: 8px; align-items: center; justify-content: flex-end; }
+.msteps { display: flex; align-items: center; margin-bottom: 16px; }
+.mstep { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--faint); }
+.mstep.active { color: var(--text); font-weight: 500; }
+.mstep.done { color: var(--green); }
+.mstep-n { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid #ccc; display: flex; align-items: center; justify-content: center; font-size: 10px; flex-shrink: 0; }
+.mstep.active .mstep-n { background: var(--accent); border-color: var(--accent); color: #fff; }
+.mstep.done .mstep-n { background: var(--green); border-color: var(--green); color: #fff; }
+.mstep-div { flex: 1; height: 1px; background: var(--border); margin: 0 6px; max-width: 24px; }
+.field { display: flex; flex-direction: column; gap: 3px; margin-bottom: 10px; }
+.field label { font-size: 11px; color: var(--muted); }
+.field input, .field select { font-size: 13px; font-family: inherit; padding: 6px 10px; border: 0.5px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text); }
+.field input:focus, .field select:focus { outline: none; border-color: #aaa; }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.f-textarea { width: 100%; font-size: 13px; font-family: inherit; border: 0.5px solid var(--border); border-radius: 9px; padding: 9px 11px; line-height: 1.6; background: var(--surface); resize: vertical; min-height: 130px; }
+.f-textarea:focus { outline: none; border-color: #aaa; }
+.mtabs { display: flex; border-bottom: 0.5px solid var(--border); }
+.mtab { font-size: 12px; padding: 6px 13px; background: none; border: none; border-bottom: 2px solid transparent; color: var(--muted); cursor: pointer; font-family: inherit; margin-bottom: -0.5px; }
+.mtab.active { color: var(--text); border-bottom-color: var(--text); font-weight: 500; }
+.mtab-body { display: none; padding-top: 10px; }
+.mtab-body.active { display: block; }
+.drop-zone { border: 1.5px dashed #ccc; border-radius: 9px; padding: 20px 14px; text-align: center; cursor: pointer; background: var(--bg); margin-bottom: 8px; }
+.drop-zone:hover, .drop-zone.over { border-color: #888; }
+.drop-zone p { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+.drop-zone small { font-size: 11px; color: var(--faint); }
+.file-ok { font-size: 12px; color: var(--green); background: var(--green-bg); padding: 5px 10px; border-radius: 7px; margin-bottom: 8px; display: none; align-items: center; justify-content: space-between; gap: 8px; }
+.sp-card { border: 0.5px solid var(--border); border-radius: 9px; background: var(--surface); overflow: hidden; margin-bottom: 7px; }
+.sp-head { display: flex; align-items: center; gap: 7px; padding: 8px 11px; border-bottom: 0.5px solid var(--border2); }
+.sp-avatar { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; flex-shrink: 0; }
+.sp-lbl { font-size: 12px; flex: 1; }
+.sp-count { font-size: 10px; color: var(--faint); }
+.sp-rm { background: none; border: none; color: var(--faint); cursor: pointer; font-size: 14px; border-radius: 4px; padding: 0 3px; line-height: 1; }
+.sp-snips { padding: 5px 11px; border-bottom: 0.5px solid var(--border2); }
+.sp-snip { font-size: 11px; color: #666; padding: 1px 0; line-height: 1.5; }
+.sp-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; padding: 8px 11px; }
+.sp-fields label { font-size: 11px; color: var(--muted); display: block; margin-bottom: 2px; }
+.sp-fields input { font-size: 12px; font-family: inherit; padding: 4px 8px; border: 0.5px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); width: 100%; }
+.sp-fields input:focus { outline: none; border-color: #aaa; background: var(--surface); }
+.fmt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-bottom: 12px; }
+.fmt-pill { border: 0.5px solid var(--border); border-radius: 9px; padding: 9px 11px; cursor: pointer; background: var(--surface); }
+.fmt-pill:hover { border-color: #aaa; }
+.fmt-pill.sel { border-color: var(--accent); background: #f5f5f2; }
+.fmt-pill input { display: none; }
+.fmt-pill-title { font-size: 12px; font-weight: 500; margin-bottom: 1px; }
+.fmt-pill-desc { font-size: 11px; color: var(--faint); }
+.status-txt { font-size: 12px; color: var(--muted); }
+.color-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.color-swatch { width: 22px; height: 22px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; }
+.color-swatch.sel { border-color: var(--text); }
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-thumb { background: #ddd; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<!-- ── Login screen ── -->
+<div class="screen" id="screen-login">
+  <div class="screen-card">
+    <div class="screen-logo">Notes <span>AI</span></div>
+    <div class="screen-subtitle">Sign in to access your notes. Your data is private and only visible to you.</div>
+    <div id="login-error" class="screen-error"></div>
+    <button class="screen-btn google" id="btn-google-login">
+      <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+      Sign in with Google
+    </button>
+    <p class="screen-note">Your notes are stored privately in your own account.<br>No one else can see them.</p>
+  </div>
+</div>
+
+<!-- ── API Key setup screen ── -->
+<div class="screen hidden" id="screen-apikey">
+  <div class="screen-card">
+    <div class="screen-logo">Notes <span>AI</span></div>
+    <div class="screen-subtitle">One more step — add your Anthropic API key to enable AI note generation.</div>
+    <div class="instructions">
+      <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:8px">How to get your free API key:</div>
+      <ol>
+        <li>Go to <a href="https://console.anthropic.ic.com" target="_blank">console.anthropic.com</a></li>
+        <li>Create a free account (no credit card needed to start)</li>
+        <li>Click <strong>API Keys</strong> in the left sidebar</li>
+        <li>Click <strong>Create Key</strong>, give it a name</li>
+        <li>Copy the key (starts with <code>sk-ant-</code>) and paste it below</li>
+      </ol>
+    </div>
+    <div id="apikey-error" class="screen-error"></div>
+    <input class="screen-input" type="password" id="apikey-input" placeholder="sk-ant-...">
+    <button class="screen-btn dark" id="btn-save-apikey">Save and continue</button>
+    <p class="screen-note">Your key is stored only in your browser. It never leaves your device<br>and is not shared with anyone.</p>
+  </div>
+</div>
+
+<!-- ── Main app ── -->
+<div class="topbar">
+  <div class="topbar-logo">Notes <span>AI</span></div>
+  <div class="topbar-spacer"></div>
+  <span class="status-txt" id="g-status"></span>
+  <button class="tbtn" id="btn-change-key" title="Change API key" style="font-size:11px">API key</button>
+  <div class="user-pill" id="user-pill"></div>
+  <button class="tbtn" id="btn-signout">Sign out</button>
+  <button class="tbtn primary" id="btn-new-note">+ New note</button>
+</div>
+
+<div class="body-wrap">
+  <div class="proj-sidebar">
+    <div class="proj-header">Projects <button class="proj-add-btn" id="btn-new-project">+</button></div>
+    <div class="proj-list" id="proj-list"></div>
+    <div class="storage-bar-wrap">
+      <div class="storage-track"><div class="storage-fill" id="storage-fill"></div></div>
+      <div class="storage-info" id="storage-info">Loading…</div>
+    </div>
+  </div>
+
+  <div class="panes">
+    <div class="pane">
+      <div class="pane-header">
+        <span class="pane-header-title" id="notes-pane-title">All notes</span>
+        <div style="display:flex;gap:4px">
+          <button class="exp-btn" id="btn-export-html" style="font-size:10px;padding:3px 7px">HTML</button>
+          <button class="exp-btn" id="btn-export-json" style="font-size:10px;padding:3px 7px">JSON</button>
+        </div>
+      </div>
+      <div class="search-box"><input type="text" id="global-search" placeholder="Search notes…"></div>
+      <div class="pane-body" id="note-list"><div class="empty-list">No notes yet.<br>Click "+ New note" to start.</div></div>
+      <div id="gsearch-results" style="display:none;overflow-y:auto;border-top:0.5px solid var(--border)"></div>
+    </div>
+
+    <div class="pane">
+      <div id="mid-empty" class="empty-note" style="display:flex;flex:1">
+        <svg width="26" height="26" fill="none" stroke="#ccc" stroke-width="1.5" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/></svg>
+        Select or create a note
+      </div>
+      <div id="mid-note" style="display:none;flex-direction:column;flex:1;overflow:hidden">
+        <div class="note-tabs">
+          <button class="note-tab active" data-tab="summary">Summary</button>
+          <button class="note-tab" data-tab="todos">To do</button>
+          <button class="note-tab" data-tab="outline">Outline</button>
+          <button class="note-tab" data-tab="edit">Edit</button>
+        </div>
+        <div class="ntb active" id="ntb-summary"></div>
+        <div class="ntb" id="ntb-todos"></div>
+        <div class="ntb" id="ntb-outline"></div>
+        <div class="ntb" id="ntb-edit">
+          <div style="margin-bottom:8px;display:flex;gap:6px;align-items:center">
+            <button class="tbtn primary" id="btn-save-edit">Save</button>
+            <button class="tbtn" id="btn-reset-edit">Reset</button>
+            <span class="status-txt" id="edit-st"></span>
+          </div>
+          <textarea id="edit-area" style="width:100%;min-height:300px;font-size:12px;font-family:'Courier New',monospace;border:0.5px solid var(--border);border-radius:9px;padding:10px;background:#fafaf8;line-height:1.7;resize:vertical"></textarea>
+        </div>
+        <div class="corr-wrap">
+          <div class="corr-hint">Describe a correction and the notes will update.</div>
+          <div class="corr-row">
+            <textarea class="corr-input" id="corr-input" placeholder="e.g. Deadline should be end of April."></textarea>
+            <button class="tbtn primary" id="btn-correction">Update</button>
+          </div>
+        </div>
+        <div class="export-row">
+          <span style="font-size:11px;color:var(--faint)">Export:</span>
+          <button class="exp-btn" id="btn-exp-txt">Text</button>
+          <button class="exp-btn" id="btn-exp-md">Markdown</button>
+          <button class="exp-btn" id="btn-exp-html">HTML</button>
+          <button class="exp-btn email-btn" id="btn-exp-email">Copy for email</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="pane">
+      <div class="tx-header">
+        <span class="tx-title">Transcript</span>
+        <input class="tx-search" type="text" id="tx-search" placeholder="Search…">
+      </div>
+      <div class="tx-body" id="tx-body"><div class="tx-empty">Transcript will appear here.</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Import modal -->
+<div class="overlay hidden" id="overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">New note</span>
+      <button class="modal-close" id="btn-close-import">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="msteps">
+        <div class="mstep active" id="ms1"><div class="mstep-n">1</div>&nbsp;Transcript</div>
+        <div class="mstep-div"></div>
+        <div class="mstep" id="ms2"><div class="mstep-n">2</div>&nbsp;Speakers</div>
+        <div class="mstep-div"></div>
+        <div class="mstep" id="ms3"><div class="mstep-n">3</div>&nbsp;Format</div>
+      </div>
+      <div id="mb1">
+        <div class="field-row">
+          <div class="field"><label>Date</label><input type="text" id="m-date" placeholder="e.g. 14 April 2026"></div>
+          <div class="field"><label>Time</label><input type="text" id="m-time" placeholder="e.g. 10:00–11:00"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Location / platform</label><input type="text" id="m-loc" placeholder="e.g. Zoom"></div>
+          <div class="field"><label>Title (optional)</label><input type="text" id="m-title" placeholder="Auto-generated if blank"></div>
+        </div>
+        <div class="field"><label>Project (optional)</label><select id="m-project"><option value="">— No project —</option></select></div>
+        <div class="mtabs">
+          <button class="mtab active" data-tab="paste">Paste text</button>
+          <button class="mtab" data-tab="upload">Upload file</button>
+        </div>
+        <div class="mtab-body active" id="mtp-paste">
+          <textarea class="f-textarea" id="m-transcript" placeholder="Paste your transcript here…"></textarea>
+          <button style="font-size:11px;color:var(--faint);background:none;border:none;cursor:pointer;font-family:inherit;text-decoration:underline;padding:0" id="btn-load-sample">Load sample</button>
+        </div>
+        <div class="mtab-body" id="mtp-upload">
+          <div class="drop-zone" id="dz">
+            <p>Drag and drop file here</p><small>.txt .md .vtt .srt .csv .docx</small><br>
+            <button class="tbtn" id="btn-browse" style="margin-top:8px">Browse</button>
+            <input type="file" id="fi" accept=".txt,.md,.vtt,.srt,.csv,.docx" style="display:none">
+          </div>
+          <div class="file-ok" id="fok"><span id="fok-name"></span><button id="btn-clear-upload" style="background:none;border:none;font-size:16px;color:#888;cursor:pointer;line-height:1">×</button></div>
+        </div>
+      </div>
+      <div id="mb2" style="display:none">
+        <p style="font-size:12px;color:var(--muted);margin-bottom:10px">Fill in real names and roles for each detected speaker.</p>
+        <div id="m-sp-list"></div>
+        <button class="tbtn" id="btn-add-speaker" style="font-size:12px;margin-bottom:4px">+ Add speaker</button>
+      </div>
+      <div id="mb3" style="display:none">
+        <p style="font-size:12px;color:var(--muted);margin-bottom:10px">Choose how the note should be structured.</p>
+        <div class="fmt-grid" id="fmt-grid">
+          <label class="fmt-pill sel" data-fmt="meeting"><input type="radio" name="fmt" value="meeting" checked><div class="fmt-pill-title">Meeting</div><div class="fmt-pill-desc">Overview, decisions, to-do list</div></label>
+          <label class="fmt-pill" data-fmt="interview"><input type="radio" name="fmt" value="interview"><div class="fmt-pill-title">Interview</div><div class="fmt-pill-desc">Q&A highlights, themes</div></label>
+          <label class="fmt-pill" data-fmt="general"><input type="radio" name="fmt" value="general"><div class="fmt-pill-title">General notes</div><div class="fmt-pill-desc">Key points, summary</div></label>
+          <label class="fmt-pill" data-fmt="actions"><input type="radio" name="fmt" value="actions"><div class="fmt-pill-title">Action-focused</div><div class="fmt-pill-desc">To-do list first</div></label>
+        </div>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:8px">Tone</p>
+        <div class="fmt-grid" id="tone-grid" style="grid-template-columns:1fr 1fr 1fr">
+          <label class="fmt-pill sel" data-tone="formal"><input type="radio" name="tone" value="formal" checked><div class="fmt-pill-title">Formal</div></label>
+          <label class="fmt-pill" data-tone="neutral"><input type="radio" name="tone" value="neutral"><div class="fmt-pill-title">Neutral</div></label>
+          <label class="fmt-pill" data-tone="casual"><input type="radio" name="tone" value="casual"><div class="fmt-pill-title">Casual</div></label>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <span class="status-txt" id="m-status"></span>
+      <button class="tbtn" id="m-back" style="display:none">← Back</button>
+      <button class="tbtn primary" id="m-next">Next →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Project modal -->
+<div class="overlay hidden" id="proj-overlay">
+  <div class="modal modal-sm">
+    <div class="modal-header">
+      <span class="modal-title" id="proj-modal-title">New project</span>
+      <button class="modal-close" id="btn-close-proj">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="field"><label>Project name</label><input type="text" id="proj-name" placeholder="e.g. Sweden Rollout"></div>
+      <div class="field"><label>Colour</label><div class="color-row" id="color-row"></div></div>
+    </div>
+    <div class="modal-footer">
+      <button class="tbtn" id="btn-cancel-proj">Cancel</button>
+      <button class="tbtn primary" id="btn-save-proj">Save project</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════
+// PASTE YOUR FIREBASE CONFIG HERE
+// ════════════════════════════════════════════════════════════
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBP8WmKgaVVPAtcgCj3hY3Deibwc-u24Io",
+  authDomain: "notes-ai-b325e.firebaseapp.com",
+  projectId: "notes-ai-b325e",
+  storageBucket: "notes-ai-b325e.firebasestorage.app",
+  messagingSenderId: "620116344737",
+  appId: "1:620116344737:web:cc38cb8525c391873ed5e0"
+};
+// ════════════════════════════════════════════════════════════
+
+firebase.initializeApp(FIREBASE_CONFIG);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+const SP_COLORS = ['#4F86C6','#E07A5F','#3D9970','#9B59B6','#F39C12','#1ABC9C','#E74C3C','#2ECC71','#3498DB','#E91E63'];
+const PROJ_COLORS = ['#4F86C6','#E07A5F','#3D9970','#9B59B6','#F39C12','#1ABC9C','#E74C3C','#16A34A','#0891B2','#DC2626','#7C3AED','#D97706'];
+const SAMPLE = `Sarah: Alright, I think we're all here. Today we need to talk about the Q3 product roadmap and the mobile app launch.
+
+James: I've been looking at the timeline and I'm concerned. We originally said end of July but the backend team is still working through auth issues.
+
+Sarah: Tom, can you give us an update on the backend?
+
+Tom: We've resolved about 70% of the authentication bugs. The main blocker is the OAuth integration. We're expecting that done by the 20th.
+
+Sarah: So realistically we're looking at early August?
+
+Tom: At the earliest. August 5th is more realistic, maybe August 10th to be safe.
+
+James: That affects our marketing push. We had the campaign lined up for late July.
+
+Sarah: Emma, can you look at shifting the marketing timeline? Talk to the agency and see how much flexibility we have.
+
+Emma: Sure, I'll reach out today. I'll have an answer by Thursday.
+
+Sarah: Next item — budget review. James, you had some numbers?
+
+James: We're currently about 12% over on development costs. I'd recommend capping contractor hours at 20 per week going forward.
+
+Sarah: Agreed. I'll send a note to the team. Tom, make sure your contractors are aware of the cap.
+
+Tom: Will do.
+
+Sarah: Any other business? No? Great. Thanks everyone, talk next week.`;
+
+let notes = [], projects = [], activeNote = null, activeProjectId = null;
+let speakerData = [], manualCt = 0, uploadedText = '', activeInputTab = 'paste';
+let selectedFmt = 'meeting', selectedTone = 'formal', mStep = 1;
+let editingProjectId = null, selectedProjColor = PROJ_COLORS[0];
+let currentUser = null;
+
+// ── API Key ───────────────────────────────────────────────────
+function getApiKey() { return localStorage.getItem('anthropic_api_key') || ''; }
+function setApiKey(k) { localStorage.setItem('anthropic_api_key', k); }
+
+// ── Auth ──────────────────────────────────────────────────────
+auth.onAuthStateChanged(user => {
+  if (user) {
+    currentUser = user;
+    document.getElementById('screen-login').classList.add('hidden');
+    const key = getApiKey();
+    if (!key) {
+      document.getElementById('screen-apikey').classList.remove('hidden');
+    } else {
+      document.getElementById('screen-apikey').classList.add('hidden');
+      showUserPill(user);
+      loadAll();
+    }
+  } else {
+    currentUser = null;
+    document.getElementById('screen-login').classList.remove('hidden');
+    document.getElementById('screen-apikey').classList.add('hidden');
+  }
+});
+
+function showUserPill(user) {
+  const pill = document.getElementById('user-pill');
+  if (user.photoURL) {
+    pill.innerHTML = `<img src="${user.photoURL}" class="user-avatar" alt=""><span>${user.displayName||user.email}</span>`;
+  } else {
+    const initials = (user.displayName||user.email||'U').slice(0,1).toUpperCase();
+    pill.innerHTML = `<div class="user-avatar-placeholder">${initials}</div><span>${user.displayName||user.email}</span>`;
+  }
+}
+
+// ── Firestore ─────────────────────────────────────────────────
+function userDoc() { return db.collection('users').doc(currentUser.uid); }
+
+async function saveAll() {
+  if (!currentUser) return;
+  try {
+    await userDoc().set({ notes: JSON.stringify(notes), projects: JSON.stringify(projects) }, { merge: true });
+    updateStorage();
+  } catch(e) { console.error('Save failed', e); }
+}
+
+async function loadAll() {
+  if (!currentUser) return;
+  try {
+    const doc = await userDoc().get();
+    if (doc.exists) {
+      const data = doc.data();
+      if (data.notes) notes = JSON.parse(data.notes);
+      if (data.projects) projects = JSON.parse(data.projects);
+    }
+  } catch(e) { console.error('Load failed', e); }
+  renderProjects(); renderNoteList(); updateStorage();
+}
+
+function updateStorage() {
+  const bytes = new Blob([JSON.stringify({notes,projects})]).size;
+  const kb = bytes / 1024;
+  document.getElementById('storage-fill').style.width = Math.min(100, kb/10000*100) + '%';
+  document.getElementById('storage-info').textContent = `${kb.toFixed(0)} KB used`;
+}
+
+// ── Projects ──────────────────────────────────────────────────
+function getProject(id) { return projects.find(p => p.id === id); }
+
+function renderProjects() {
+  const el = document.getElementById('proj-list');
+  let html = `<div class="proj-item${activeProjectId===null?' active':''}" data-proj-id="">
+    <div class="proj-item-dot" style="background:#666"></div>
+    <span class="proj-item-name">All notes</span>
+    <span class="proj-item-count">${notes.length}</span>
+  </div>`;
+  projects.forEach(p => {
+    const cnt = notes.filter(n => n.projectId === p.id).length;
+    html += `<div class="proj-item${activeProjectId===p.id?' active':''}" data-proj-id="${p.id}">
+      <div class="proj-item-dot" style="background:${p.color}"></div>
+      <span class="proj-item-name">${esc(p.name)}</span>
+      <span class="proj-item-count">${cnt}</span>
+      <button class="proj-rm" data-proj-action="edit" data-proj-id="${p.id}">✎</button>
+      <button class="proj-rm" data-proj-action="delete" data-proj-id="${p.id}" data-armed="false" style="color:#855">✕</button>
+    </div>`;
+  });
+  el.innerHTML = html;
+  const sel = document.getElementById('m-project');
+  if (sel) {
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">— No project —</option>' + projects.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
+    if (cur) sel.value = cur;
+  }
+}
+
+function setActiveProject(id) {
+  activeProjectId = id || null;
+  const proj = id ? getProject(id) : null;
+  document.getElementById('notes-pane-title').textContent = proj ? proj.name : 'All notes';
+  document.getElementById('global-search').placeholder = proj ? `Search ${proj.name}…` : 'Search notes…';
+  renderProjects(); renderNoteList(); clearGlobalSearch();
+}
+
+function openNewProject() {
+  editingProjectId = null; selectedProjColor = PROJ_COLORS[0];
+  document.getElementById('proj-name').value = '';
+  document.getElementById('proj-modal-title').textContent = 'New project';
+  renderColorPicker();
+  document.getElementById('proj-overlay').classList.remove('hidden');
+  setTimeout(() => document.getElementById('proj-name').focus(), 50);
+}
+function editProject(id) {
+  const p = getProject(id); if (!p) return;
+  editingProjectId = id; selectedProjColor = p.color;
+  document.getElementById('proj-name').value = p.name;
+  document.getElementById('proj-modal-title').textContent = 'Edit project';
+  renderColorPicker();
+  document.getElementById('proj-overlay').classList.remove('hidden');
+}
+function closeProjModal() { document.getElementById('proj-overlay').classList.add('hidden'); }
+function renderColorPicker() {
+  document.getElementById('color-row').innerHTML = PROJ_COLORS.map(c =>
+    `<div class="color-swatch${c===selectedProjColor?' sel':''}" style="background:${c}" data-color="${c}"></div>`).join('');
+}
+function saveProject() {
+  const name = document.getElementById('proj-name').value.trim();
+  if (!name) return;
+  if (editingProjectId) { const p=getProject(editingProjectId); if(p){p.name=name;p.color=selectedProjColor;} }
+  else projects.push({ id: Date.now().toString(), name, color: selectedProjColor });
+  saveAll(); renderProjects(); closeProjModal();
+}
+function getVisibleNotes() { return activeProjectId ? notes.filter(n => n.projectId === activeProjectId) : notes; }
+
+// ── Note list ─────────────────────────────────────────────────
+function renderNoteList() {
+  const el = document.getElementById('note-list');
+  const visible = getVisibleNotes();
+  if (!visible.length) { el.innerHTML=`<div class="empty-list">${activeProjectId?'No notes in this project yet.':'No notes yet.<br>Click "+ New note" to start.'}</div>`; return; }
+  el.innerHTML = visible.map(n => {
+    const proj = n.projectId ? getProject(n.projectId) : null;
+    return `<div class="note-card${activeNote?.id===n.id?' active':''}" data-note-id="${n.id}">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:4px">
+        <div class="nc-body" style="min-width:0;flex:1;cursor:pointer">
+          ${proj?`<div class="nc-proj" style="color:${proj.color}">${esc(proj.name)}</div>`:''}
+          <div class="nc-type">${n.type}</div>
+          <div class="nc-title">${esc(n.title)}</div>
+          <div class="nc-meta">${[n.date,n.time,n.loc].filter(Boolean).join(' · ')}</div>
+          <div class="nc-preview">${esc((n.parsed?.overview||n.parsed?.summary||'').slice(0,75))}</div>
+        </div>
+        <button class="note-del-btn" data-note-id="${n.id}" data-armed="false" style="background:none;border:none;color:#bbb;cursor:pointer;font-size:20px;flex-shrink:0;padding:0 4px;line-height:1;border-radius:4px" title="Delete">×</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function deleteNote(id) {
+  id = Number(id);
+  notes = notes.filter(n => Number(n.id) !== id);
+  if (activeNote && Number(activeNote.id) === id) {
+    activeNote = null;
+    document.getElementById('mid-empty').style.display = 'flex';
+    document.getElementById('mid-note').style.display = 'none';
+    document.getElementById('tx-body').innerHTML = '<div class="tx-empty">Transcript will appear here.</div>';
+  }
+  saveAll(); renderProjects(); renderNoteList();
+}
+
+// ── Import modal ──────────────────────────────────────────────
+function openImport() {
+  mStep = 1; renderMStep();
+  const sel = document.getElementById('m-project');
+  if (sel && activeProjectId) sel.value = activeProjectId;
+  document.getElementById('overlay').classList.remove('hidden');
+}
+function closeImport() { document.getElementById('overlay').classList.add('hidden'); }
+
+function renderMStep() {
+  ['mb1','mb2','mb3'].forEach((id,i) => document.getElementById(id).style.display = i+1===mStep?'block':'none');
+  ['ms1','ms2','ms3'].forEach((id,i) => { const el=document.getElementById(id); el.classList.remove('active','done'); if(i+1===mStep)el.classList.add('active'); else if(i+1<mStep)el.classList.add('done'); });
+  document.getElementById('m-back').style.display = mStep > 1 ? 'inline-block' : 'none';
+  document.getElementById('m-next').textContent = mStep === 3 ? 'Generate' : 'Next →';
+  document.getElementById('m-status').textContent = '';
+}
+
+function switchInputTab(t) {
+  activeInputTab = t;
+  document.querySelectorAll('.mtabs .mtab').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
+  document.getElementById('mtp-paste').classList.toggle('active', t==='paste');
+  document.getElementById('mtp-upload').classList.toggle('active', t==='upload');
+}
+
+async function mNext() {
+  if (mStep === 1) {
+    const t = activeInputTab==='upload' ? uploadedText : document.getElementById('m-transcript').value.trim();
+    if (!t) { document.getElementById('m-status').textContent = 'Please add a transcript first.'; return; }
+    detectSpeakers(t); renderModalSpeakers(); mStep = 2; renderMStep();
+  } else if (mStep === 2) { mStep = 3; renderMStep(); }
+  else { await generate(); }
+}
+
+// ── File ──────────────────────────────────────────────────────
+function readFile(file) {
+  if (file.name.toLowerCase().endsWith('.docx')) {
+    const r = new FileReader();
+    r.onload = async e => {
+      try { const result = await mammoth.extractRawText({ arrayBuffer: e.target.result }); uploadedText = result.value; }
+      catch(err) { uploadedText = new TextDecoder('utf-8').decode(e.target.result); }
+      showFileOk(file.name);
+    };
+    r.readAsArrayBuffer(file);
+  } else {
+    const r = new FileReader();
+    r.onload = e => { uploadedText = e.target.result; showFileOk(file.name); };
+    r.readAsText(file);
+  }
+}
+function showFileOk(name) { document.getElementById('fok-name').textContent=`Loaded: ${name}`; document.getElementById('fok').style.display='flex'; }
+function clearUpload() { uploadedText=''; document.getElementById('fi').value=''; document.getElementById('fok').style.display='none'; }
+
+// ── Speaker detection ─────────────────────────────────────────
+function detectSpeakers(text) {
+  const map = {};
+  const lines = text.split(/\r?\n/);
+  function isTs(l) { return /^\d/.test(l)||/^(\d+\s+(hour|minute|second))/i.test(l); }
+  function isHead(l) { if(!l)return false; if(/^Speaker\s+\d+/i.test(l))return true; return /^[A-Z][a-zA-Z\s\-']{1,40}(\s+\d.*)?$/.test(l)&&!/:\s/.test(l); }
+  function exName(l) { return l.replace(/\s*\d[\d\s:hmsecond minutour]*$/i,'').replace(/\s*\([\d:]+\)\s*$/,'').trim(); }
+  function teamsName(l) { l=l.replace(/\*\*/g,'').trim(); const m=l.match(/^([A-Z][a-zA-Z\-']+(?:\s+[A-Z][a-zA-Z\-']+)*)\s+\d+:\d+/); return m?m[1].trim():null; }
+  function teamsContent(l) { l=l.replace(/\*\*/g,'').trim(); const m=l.match(/^[A-Z][a-zA-Z\-']+(?:\s+[A-Z][a-zA-Z\-']+)*\s+\d+:\d+(.+)$/); return m?m[1].trim():null; }
+  for (let i=0;i<lines.length;i++) {
+    const line=lines[i].trim(); if(!line)continue;
+    const sl=line.replace(/\*\*/g,'').match(/^([A-Za-z][A-Za-z\s\-']{1,28}):\s*(.+)/);
+    if(sl&&!/\d/.test(sl[1].trim())){const n=sl[1].trim(),c=sl[2].trim();if(!map[n])map[n]=[];if(map[n].length<6)map[n].push(c);continue;}
+    const tn=teamsName(line);
+    if(tn&&tn.length>=2){const content=teamsContent(line);if(content&&content.length>1){if(!map[tn])map[tn]=[];if(map[tn].length<6)map[tn].push(content);}continue;}
+    if(isHead(line)){
+      const name=exName(line);if(!name||name.length<2)continue;
+      let j=i+1;while(j<lines.length&&(lines[j].trim()===''||isTs(lines[j].trim())))j++;
+      if(j<lines.length&&isHead(lines[j].trim())&&exName(lines[j].trim())===name)j++;
+      const sp=[];while(j<lines.length&&sp.length<2){const s2=lines[j].trim();if(!s2||isTs(s2)){j++;continue;}if(isHead(s2))break;sp.push(s2);j++;}
+      if(sp.length){const c=sp.join(' ');if(!map[name])map[name]=[];if(map[name].length<6)map[name].push(c);}
+    }
+  }
+  speakerData=Object.entries(map).map(([label,lines],i)=>({label,lines,fullName:'',role:'',color:SP_COLORS[i%SP_COLORS.length]}));
+}
+
+function renderModalSpeakers() {
+  const el=document.getElementById('m-sp-list');el.innerHTML='';
+  if(!speakerData.length){el.innerHTML='<p style="font-size:12px;color:var(--faint);margin-bottom:10px">No speakers detected. Add manually.</p>';return;}
+  speakerData.forEach((sp,idx)=>{
+    const d=document.createElement('div');d.className='sp-card';
+    const snips=sp.lines.slice(0,2).map(l=>`<div class="sp-snip">"${esc(trunc(l,90))}"</div>`).join('');
+    d.innerHTML=`<div class="sp-head"><div class="sp-avatar" style="background:${sp.color}20;color:${sp.color}">${esc(sp.label[0].toUpperCase())}</div><span class="sp-lbl"><strong>${esc(sp.label)}</strong></span><span class="sp-count">${sp.lines.length} lines</span><button class="sp-rm" data-sp-idx="${idx}">×</button></div>`
+      +(sp.lines.length?`<div class="sp-snips">${snips}</div>`:'')
+      +`<div class="sp-fields"><div><label>Full name<input type="text" placeholder="e.g. Sarah Johnson" value="${esc(sp.fullName)}" data-sp-field="fullName" data-sp-idx="${idx}"></label></div><div><label>Role<input type="text" placeholder="e.g. Product Lead" value="${esc(sp.role)}" data-sp-field="role" data-sp-idx="${idx}"></label></div></div>`;
+    el.appendChild(d);
+  });
+}
+function getSpCtx(){return speakerData.filter(s=>s.label).map(s=>{let l=s.label;if(s.fullName)l+=` = ${s.fullName}`;if(s.role)l+=` (${s.role})`;return l;}).join('\n');}
+
+// ── Prompt ────────────────────────────────────────────────────
+function buildPrompt() {
+  const tones={formal:'formal and professional',neutral:'clear and plain',casual:'friendly and conversational'};
+  const fmts={
+    meeting:`{"attendees":["Full Name (Role) or label"],"title":"Short title","overview":"3-5 sentence summary.","todos":[{"task":"task","owner":"First name","deadline":"deadline or null","done":false}],"topics":[{"title":"Topic","points":["point"]}],"decisions":["decision"]}`,
+    interview:`{"attendees":["names"],"title":"Interview title","overview":"2-3 sentence summary.","key_themes":["theme"],"qa_highlights":[{"question":"Q","answer":"A"}],"todos":[{"task":"task","owner":"first name","deadline":"or null","done":false}]}`,
+    general:`{"attendees":["names"],"title":"Note title","summary":"Summary paragraph.","key_points":["point"],"notable":["highlight"]}`,
+    actions:`{"attendees":["names"],"title":"Action note title","overview":"One sentence context.","todos":[{"task":"task","owner":"first name","deadline":"or null","done":false}],"decisions":["decision"]}`
+  };
+  return `You are a skilled notes writer. Tone: ${tones[selectedTone]}.
+Return ONLY a raw JSON object. First character must be { and last must be }. No markdown fences. No text before or after.
+Structure: ${fmts[selectedFmt]}
+Rules: First names only except in attendees. No em dashes. No emojis. No AI filler. Plain direct language. Do not invent anything. Be thorough with todos. Never truncate.`;
+}
+
+// ── Generate ──────────────────────────────────────────────────
+async function generate() {
+  const apiKey = getApiKey();
+  if (!apiKey) { document.getElementById('screen-apikey').classList.remove('hidden'); return; }
+  const transcript=activeInputTab==='upload'?uploadedText:document.getElementById('m-transcript').value.trim();
+  const date=document.getElementById('m-date').value.trim(),time=document.getElementById('m-time').value.trim(),loc=document.getElementById('m-loc').value.trim();
+  const customTitle=document.getElementById('m-title').value.trim(),projectId=document.getElementById('m-project').value||null;
+  const spCtx=getSpCtx(),meta=[date&&`Date: ${date}`,time&&`Time: ${time}`,loc&&`Location: ${loc}`].filter(Boolean).join('\n');
+  const userMsg=[meta&&`Meeting metadata:\n${meta}`,spCtx&&`Speaker identities:\n${spCtx}`,`Transcript:\n${transcript}`].filter(Boolean).join('\n\n');
+  const btn=document.getElementById('m-next'),st=document.getElementById('m-status');
+  btn.disabled=true;
+  let dots=0;const ticker=setInterval(()=>{dots=(dots+1)%4;st.textContent='Generating'+'.'.repeat(dots);},400);
+  try {
+    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:8000,stream:true,system:buildPrompt(),messages:[{role:'user',content:userMsg}]})});
+    if(res.status===401){clearInterval(ticker);st.textContent='Invalid API key.';localStorage.removeItem('anthropic_api_key');btn.disabled=false;return;}
+    const reader=res.body.getReader(),decoder=new TextDecoder();let raw='';
+    while(true){const{done,value}=await reader.read();if(done)break;const chunk=decoder.decode(value,{stream:true});for(const line of chunk.split('\n')){if(!line.startsWith('data: '))continue;const d=line.slice(6).trim();if(d==='[DONE]')continue;try{const ev=JSON.parse(d);if(ev.type==='content_block_delta'&&ev.delta?.text)raw+=ev.delta.text;}catch(e){}}}
+    clearInterval(ticker);
+    let parsed;try{parsed=extractJSON(raw);}catch(e){try{const fix=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:8000,system:'Return only corrected raw JSON. First char {, last char }.',messages:[{role:'user',content:`Fix:\n${raw}`}]})});const fd=await fix.json();parsed=extractJSON(fd.content.map(b=>b.text||'').join(''));}catch(e2){st.textContent='Parse error. Try again.';btn.disabled=false;return;}}
+    const note={id:Date.now(),date,time,loc,projectId,title:customTitle||(parsed.title||'Untitled note'),type:selectedFmt,tone:selectedTone,raw,parsed,transcript,speakerData:JSON.parse(JSON.stringify(speakerData)),originalTranscript:transcript};
+    notes.unshift(note);await saveAll();renderProjects();renderNoteList();selectNote(note.id);closeImport();st.textContent='';
+  }catch(e){clearInterval(ticker);st.textContent=`Error: ${e.message||'unknown'}`;}
+  btn.disabled=false;
+}
+
+// ── Corrections ───────────────────────────────────────────────
+async function applyCorrection() {
+  if(!activeNote)return;
+  const apiKey=getApiKey();if(!apiKey)return;
+  const correction=document.getElementById('corr-input').value.trim();if(!correction)return;
+  const btn=document.getElementById('btn-correction');btn.disabled=true;btn.textContent='Updating…';
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:8000,system:'Update meeting notes JSON based on correction. Return only raw JSON. First char {, last char }.',messages:[{role:'user',content:`Notes:\n${activeNote.raw}\n\nCorrection:\n${correction}`}]})});
+    const data=await res.json();const raw=data.content.map(b=>b.text||'').join('');
+    const parsed=extractJSON(raw);activeNote.raw=raw;activeNote.parsed=parsed;
+    if(parsed.title)activeNote.title=parsed.title;
+    await saveAll();renderNoteList();selectNote(activeNote.id);document.getElementById('corr-input').value='';
+  }catch(e){}
+  btn.disabled=false;btn.textContent='Update';
+}
+
+// ── Select / render note ──────────────────────────────────────
+function selectNote(id) {
+  const note=notes.find(n=>Number(n.id)===Number(id));if(!note)return;
+  activeNote=note;renderNoteList();
+  document.getElementById('mid-empty').style.display='none';
+  document.getElementById('mid-note').style.display='flex';
+  switchNoteTab('summary');
+  renderSummaryTab(note);renderTodosTab(note);renderOutlineTab(note);
+  document.getElementById('edit-area').value=note.transcript||'';
+  renderTranscript(note);
+}
+function switchNoteTab(t){document.querySelectorAll('.note-tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));document.querySelectorAll('.ntb').forEach(b=>b.classList.toggle('active',b.id===`ntb-${t}`));}
+function ns(title,body){return `<div class="ns"><div class="ns-label">${title}</div><div class="ns-body">${body}</div></div>`;}
+
+function renderSummaryTab(note) {
+  const p=note.parsed;let html='';
+  const proj=note.projectId?getProject(note.projectId):null;
+  const metaParts=[note.date&&`📅 ${esc(note.date)}${note.time?' '+esc(note.time):''}`,note.loc&&`📍 ${esc(note.loc)}`].filter(Boolean);
+  html+=`<div class="note-meta-bar">`;
+  metaParts.forEach(m=>html+=`<span class="meta-chip">${m}</span>`);
+  html+=`<span class="type-badge type-${note.type}">${note.type}</span>`;
+  if(proj)html+=`<span class="proj-badge" style="background:${proj.color}">${esc(proj.name)}</span>`;
+  html+=`</div>`;
+  if(projects.length){html+=`<div style="margin-bottom:16px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)"><span>Project:</span><select class="move-note-sel" data-note-id="${note.id}" style="font-size:12px;font-family:inherit;padding:4px 8px;border:0.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text)"><option value="">— None —</option>${projects.map(p=>`<option value="${p.id}"${note.projectId===p.id?' selected':''}>${esc(p.name)}</option>`).join('')}</select></div>`;}
+  if(p.attendees?.length)html+=ns('Attendees',`<p>${p.attendees.map(esc).join(', ')}</p>`);
+  if(p.overview)html+=ns('Overview',`<p>${esc(p.overview)}</p>`);
+  if(p.summary)html+=ns('Summary',`<p>${esc(p.summary)}</p>`);
+  if(p.decisions?.length)html+=ns('Decisions','<ul>'+p.decisions.map(d=>`<li>${esc(d)}</li>`).join('')+'</ul>');
+  if(p.key_themes?.length)html+=ns('Key themes','<ul>'+p.key_themes.map(t=>`<li>${esc(t)}</li>`).join('')+'</ul>');
+  if(p.notable?.length)html+=ns('Highlights','<ul>'+p.notable.map(n=>`<li>${esc(n)}</li>`).join('')+'</ul>');
+  document.getElementById('ntb-summary').innerHTML=html;
+}
+
+function renderTodosTab(note){
+  const todos=note.parsed?.todos||[];let html='';
+  if(!todos.length){html='<p style="font-size:13px;color:var(--faint);padding:8px 0">No action items found.</p>';}
+  else todos.forEach((t,i)=>{html+=`<div class="todo-item"><div class="todo-cb${t.done?' done':''}" data-note-id="${note.id}" data-todo-idx="${i}" style="cursor:pointer"></div><div><div class="todo-text${t.done?' done':''}">${esc(t.task)}</div>${t.owner?`<div class="todo-owner"><strong>${esc(t.owner)}</strong></div>`:''}${t.deadline?`<div class="todo-deadline">By ${esc(t.deadline)}</div>`:''}</div></div>`;});
+  document.getElementById('ntb-todos').innerHTML=html;
+}
+
+function renderOutlineTab(note){
+  const p=note.parsed;let html='';
+  if(p.topics?.length){p.topics.forEach(t=>{html+=`<div class="ns"><div class="ns-label">${esc(t.title)}</div><ul class="ns-body">${(t.points||[]).map(pt=>`<li>${esc(pt)}</li>`).join('')}</ul></div>`;});}
+  else if(p.qa_highlights?.length){p.qa_highlights.forEach(q=>{html+=`<div class="ns"><p style="font-weight:500">${esc(q.question)}</p><p style="color:#444;margin-top:4px">${esc(q.answer)}</p></div>`;});}
+  else if(p.key_points?.length){html=ns('Key points','<ul>'+p.key_points.map(pt=>`<li>${esc(pt)}</li>`).join('')+'</ul>');}
+  else{html='<p style="font-size:13px;color:var(--faint)">No outline available.</p>';}
+  document.getElementById('ntb-outline').innerHTML=html;
+}
+
+function renderTranscript(note){
+  const el=document.getElementById('tx-body');
+  if(!note.transcript){el.innerHTML='<div class="tx-empty">No transcript.</div>';return;}
+  const spColors={};(note.speakerData||[]).forEach(sp=>{spColors[sp.label]=sp.color||'#888';if(sp.fullName)spColors[sp.fullName]=sp.color||'#888';});
+  const lines=note.transcript.split(/\r?\n/).filter(l=>l.trim());let html='';
+  lines.forEach(line=>{
+    const m=line.match(/^([A-Za-z][A-Za-z\s\-']{0,28}):\s*(.+)/);
+    if(m&&!/\d/.test(m[1])){const name=m[1].trim(),text=m[2].trim(),color=spColors[name]||'#888';html+=`<div class="tx-block"><div class="tx-speaker"><span class="sp-dot" style="background:${color}"></span><span style="color:${color}">${esc(name)}</span></div><div class="tx-text">${esc(text)}</div></div>`;}
+    else{html+=`<div class="tx-block"><div class="tx-text" style="color:var(--faint)">${esc(line)}</div></div>`;}
+  });
+  el.innerHTML=html||'<div class="tx-empty">No transcript.</div>';
+}
+
+function globalSearch(){
+  const q=document.getElementById('global-search').value.trim();
+  const listEl=document.getElementById('note-list'),resEl=document.getElementById('gsearch-results');
+  if(!q){listEl.style.display='block';resEl.style.display='none';return;}
+  listEl.style.display='none';resEl.style.display='block';
+  const regex=new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi');
+  const hits=[];
+  getVisibleNotes().forEach(n=>{
+    const searchable=[n.title||'',n.parsed?.overview||'',n.parsed?.summary||'',(n.parsed?.todos||[]).map(t=>t.task).join(' '),(n.parsed?.decisions||[]).join(' '),(n.parsed?.topics||[]).map(t=>t.title+' '+(t.points||[]).join(' ')).join(' '),(n.parsed?.key_points||[]).join(' '),n.transcript||''].join(' ');
+    const matches=[...searchable.matchAll(regex)];
+    if(matches.length){const txIdx=(n.transcript||'').search(regex);let snippet='';if(txIdx!==-1){const s=Math.max(0,txIdx-40),e=Math.min((n.transcript||'').length,txIdx+80);snippet=(n.transcript||'').slice(s,e).replace(regex,m=>`<mark>${esc(m)}</mark>`);if(s>0)snippet='…'+snippet;if(e<(n.transcript||'').length)snippet+='…';}hits.push({note:n,count:matches.length,snippet});}
+  });
+  if(!hits.length){resEl.innerHTML=`<div class="empty-list">No results for "<strong>${esc(q)}</strong>".</div>`;return;}
+  resEl.innerHTML=`<div style="padding:7px 12px;font-size:11px;color:var(--faint)">${hits.length} match${hits.length!==1?'es':''}</div>`+hits.map(h=>`<div class="note-card search-result-card" data-note-id="${h.note.id}"><div style="display:flex;justify-content:space-between"><div class="nc-title">${esc(h.note.title)}</div><span style="font-size:10px;background:var(--bg);padding:1px 6px;border-radius:8px;color:var(--muted)">${h.count} match${h.count!==1?'es':''}</span></div><div class="nc-meta">${[h.note.date,h.note.type].filter(Boolean).join(' · ')}</div>${h.snippet?`<div class="nc-preview" style="white-space:normal;margin-top:3px">${h.snippet}</div>`:''}</div>`).join('');
+}
+function clearGlobalSearch(){document.getElementById('global-search').value='';document.getElementById('note-list').style.display='block';document.getElementById('gsearch-results').style.display='none';}
+function saveEdit(){if(!activeNote)return;activeNote.transcript=document.getElementById('edit-area').value;saveAll();document.getElementById('edit-st').textContent='Saved.';}
+function resetEdit(){if(!activeNote)return;document.getElementById('edit-area').value=activeNote.originalTranscript;activeNote.transcript=activeNote.originalTranscript;document.getElementById('edit-st').textContent='Reset.';}
+
+// ── Export ────────────────────────────────────────────────────
+function dl(content,name,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([content],{type}));a.download=name;a.click();}
+function expTxt(){if(!activeNote)return;const p=activeNote.parsed;let txt=`${p.title||activeNote.title}\n${'='.repeat(40)}\n\n`;if(p.attendees?.length)txt+=`ATTENDEES\n${p.attendees.join(', ')}\n\n`;if(p.overview)txt+=`OVERVIEW\n${p.overview}\n\n`;if(p.summary)txt+=`SUMMARY\n${p.summary}\n\n`;if(p.todos?.length){txt+=`TO DO\n`;p.todos.forEach(t=>txt+=`${t.done?'☑':'☐'} ${t.task}${t.owner?' ('+t.owner+')':''}${t.deadline?' — By '+t.deadline:''}\n`);txt+='\n';}if(p.topics?.length){txt+=`DISCUSSION\n`;p.topics.forEach(t=>{txt+=`${t.title}\n`;(t.points||[]).forEach(pt=>txt+=`  • ${pt}\n`);txt+='\n';});}if(p.decisions?.length){txt+=`DECISIONS\n`;p.decisions.forEach(d=>txt+=`  • ${d}\n`);}dl(txt,'notes.txt','text/plain');}
+function expMd(){if(!activeNote)return;const p=activeNote.parsed;let md=`# ${p.title||activeNote.title}\n\n`;if(p.attendees?.length)md+=`## Attendees\n${p.attendees.join(', ')}\n\n`;if(p.overview)md+=`## Overview\n${p.overview}\n\n`;if(p.summary)md+=`## Summary\n${p.summary}\n\n`;if(p.todos?.length){md+=`## To Do\n`;p.todos.forEach(t=>md+=`- [${t.done?'x':' '}] ${t.task}${t.owner?' ('+t.owner+')':''}${t.deadline?' — By '+t.deadline:''}\n`);md+='\n';}if(p.topics?.length){md+=`## Discussion\n`;p.topics.forEach(t=>{md+=`### ${t.title}\n`;(t.points||[]).forEach(pt=>md+=`- ${pt}\n`);md+='\n';});}if(p.decisions?.length){md+=`## Decisions\n`;p.decisions.forEach(d=>md+=`- ${d}\n`);}dl(md,'notes.md','text/markdown');}
+function expHtml(){if(!activeNote)return;const p=activeNote.parsed;let body='';const metaParts=[activeNote.date&&`📅 ${esc(activeNote.date)}${activeNote.time?' '+esc(activeNote.time):''}`,activeNote.loc&&`📍 ${esc(activeNote.loc)}`].filter(Boolean);if(metaParts.length)body+=`<p class="meta">${metaParts.join(' &nbsp;·&nbsp; ')}</p>`;if(p.attendees?.length)body+=`<h2>Attendees</h2><p>${p.attendees.map(esc).join(', ')}</p>`;if(p.overview)body+=`<h2>Overview</h2><p>${esc(p.overview)}</p>`;if(p.summary)body+=`<h2>Summary</h2><p>${esc(p.summary)}</p>`;if(p.todos?.length){body+=`<h2>To Do</h2><ul class="todos">`;p.todos.forEach(t=>{body+=`<li class="${t.done?'done':''}"><span class="cb">${t.done?'☑':'☐'}</span> ${esc(t.task)}${t.owner?` <em>${esc(t.owner)}</em>`:''}${t.deadline?` <span class="dl">By ${esc(t.deadline)}</span>`:''}</li>`;});body+=`</ul>`;}if(p.topics?.length){body+=`<h2>Discussion</h2>`;p.topics.forEach(t=>{body+=`<h3>${esc(t.title)}</h3><ul>`;(t.points||[]).forEach(pt=>body+=`<li>${esc(pt)}</li>`);body+=`</ul>`;});}if(p.decisions?.length){body+=`<h2>Decisions</h2><ul>`;p.decisions.forEach(d=>body+=`<li>${esc(d)}</li>`);body+=`</ul>`;}const html=`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${esc(activeNote.title||'Notes')}</title><style>body{font-family:system-ui,sans-serif;max-width:720px;margin:40px auto;padding:0 24px;color:#1a1a18;line-height:1.75;font-size:14px}h1{font-size:20px;font-weight:600;margin-bottom:4px}h2{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#999;border-bottom:1px solid #eee;padding-bottom:5px;margin:24px 0 10px}h3{font-size:14px;font-weight:500;margin:14px 0 4px}p{margin-bottom:6px}.meta{font-size:13px;color:#888;margin-bottom:20px}ul{list-style:none;padding:0;margin:0}li{padding:3px 0 3px 14px;position:relative}li::before{content:"•";position:absolute;left:0;color:#ccc}ul.todos li::before{content:none}ul.todos li{padding:6px 0;border-bottom:1px solid #f5f5f3;display:flex;align-items:flex-start;gap:8px}.cb{flex-shrink:0}.done{color:#aaa;text-decoration:line-through}em{font-style:normal;color:#888;font-size:12px;margin-left:4px}.dl{font-size:11px;background:#FEF3C7;color:#b45309;padding:1px 6px;border-radius:4px;margin-left:4px}</style></head><body><h1>${esc(activeNote.title||'Notes')}</h1>${body}</body></html>`;dl(html,'notes.html','text/html');}
+function emailSec(t,c){return `<p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#999;font-family:system-ui,sans-serif;border-bottom:1px solid #eee;padding-bottom:4px;margin:20px 0 8px">${t}</p>${c}`;}
+function copyForEmail(){if(!activeNote)return;const p=activeNote.parsed,btn=document.getElementById('btn-exp-email');const metaParts=[activeNote.date,activeNote.time,activeNote.loc].filter(Boolean);let html=`<h2 style="font-size:16px;font-family:system-ui,sans-serif;margin:0 0 4px">${esc(activeNote.title||'Notes')}</h2>`;if(metaParts.length)html+=`<p style="font-size:13px;color:#888;font-family:system-ui,sans-serif;margin:0 0 16px">${metaParts.map(esc).join(' &nbsp;·&nbsp; ')}</p>`;if(p.attendees?.length)html+=emailSec('Attendees',`<p style="font-family:system-ui,sans-serif;font-size:14px;margin:0 0 4px">${p.attendees.map(esc).join(', ')}</p>`);if(p.overview)html+=emailSec('Overview',`<p style="font-family:system-ui,sans-serif;font-size:14px;line-height:1.6;margin:0">${esc(p.overview)}</p>`);if(p.todos?.length){let rows='';p.todos.forEach(t=>{const meta=[t.owner&&`<span style="color:#888;font-style:italic">${esc(t.owner)}</span>`,t.deadline&&`<span style="font-size:11px;background:#FEF3C7;color:#b45309;padding:1px 5px;border-radius:3px">By ${esc(t.deadline)}</span>`].filter(Boolean).join(' ');rows+=`<tr><td style="padding:5px 8px 5px 0;vertical-align:top;font-size:18px;line-height:1;color:#ccc">${t.done?'☑':'☐'}</td><td style="padding:5px 0;font-family:system-ui,sans-serif;font-size:14px;line-height:1.5">${esc(t.task)}${meta?`<br><span style="font-size:12px">${meta}</span>`:''}</td></tr>`;});html+=emailSec('To Do',`<table style="border-collapse:collapse;width:100%">${rows}</table>`);}if(p.topics?.length){let tp='';p.topics.forEach(t=>{tp+=`<p style="font-weight:600;font-family:system-ui,sans-serif;font-size:14px;margin:12px 0 4px">${esc(t.title)}</p><ul style="margin:0 0 8px;padding-left:20px">`;(t.points||[]).forEach(pt=>tp+=`<li style="font-family:system-ui,sans-serif;font-size:14px;line-height:1.6;margin-bottom:2px">${esc(pt)}</li>`);tp+=`</ul>`;});html+=emailSec('Discussion',tp);}if(p.decisions?.length)html+=emailSec('Decisions',`<ul style="margin:0;padding-left:20px">${p.decisions.map(d=>`<li style="font-family:system-ui,sans-serif;font-size:14px;line-height:1.6;margin-bottom:2px">${esc(d)}</li>`).join('')}</ul>`);let plain=`${activeNote.title||'Notes'}\n${metaParts.join(' · ')}\n\n`;if(p.attendees?.length)plain+=`ATTENDEES\n${p.attendees.join(', ')}\n\n`;if(p.overview)plain+=`OVERVIEW\n${p.overview}\n\n`;if(p.todos?.length){plain+=`TO DO\n`;p.todos.forEach(t=>plain+=`${t.done?'☑':'☐'} ${t.task}${t.owner?' ('+t.owner+')':''}${t.deadline?' — By '+t.deadline:''}\n`);plain+='\n';}if(p.topics?.length){plain+=`DISCUSSION\n`;p.topics.forEach(t=>{plain+=`${t.title}\n`;(t.points||[]).forEach(pt=>plain+=`  • ${pt}\n`);plain+='\n';});}if(p.decisions?.length){plain+=`DECISIONS\n`;p.decisions.forEach(d=>plain+=`  • ${d}\n`);}try{navigator.clipboard.write([new ClipboardItem({'text/html':new Blob([html],{type:'text/html'}),'text/plain':new Blob([plain],{type:'text/plain'})})]).then(()=>{btn.textContent='Copied!';setTimeout(()=>btn.textContent='Copy for email',1800);});}catch(e){const ta=document.createElement('textarea');ta.value=plain;ta.style.cssText='position:fixed;top:0;left:0;opacity:0';document.body.appendChild(ta);ta.focus();ta.select();try{document.execCommand('copy');btn.textContent='Copied!';setTimeout(()=>btn.textContent='Copy for email',1800);}catch(e2){}document.body.removeChild(ta);}}
+function exportProjectNotes(projectId){const proj=projectId?getProject(projectId):null;const exp=projectId?notes.filter(n=>n.projectId===projectId):notes;if(!exp.length)return;const notesHtml=exp.map(note=>{const p=note.parsed;let body='';const metaParts=[note.date&&`📅 ${esc(note.date)}${note.time?' '+esc(note.time):''}`,note.loc&&`📍 ${esc(note.loc)}`].filter(Boolean);const np=note.projectId?getProject(note.projectId):null;if(metaParts.length)body+=`<p class="meta">${metaParts.join(' &nbsp;·&nbsp; ')}${np?` &nbsp;·&nbsp; <span style="background:${np.color};color:#fff;font-size:11px;padding:2px 7px;border-radius:10px">${esc(np.name)}</span>`:''}</p>`;if(p.attendees?.length)body+=`<h3>Attendees</h3><p>${p.attendees.map(esc).join(', ')}</p>`;if(p.overview)body+=`<h3>Overview</h3><p>${esc(p.overview)}</p>`;if(p.summary)body+=`<h3>Summary</h3><p>${esc(p.summary)}</p>`;if(p.todos?.length){body+=`<h3>To Do</h3><ul class="todos">`;p.todos.forEach(t=>{body+=`<li class="${t.done?'done':''}"><span class="cb">${t.done?'☑':'☐'}</span> ${esc(t.task)}${t.owner?` <em>${esc(t.owner)}</em>`:''}${t.deadline?` <span class="dl">By ${esc(t.deadline)}</span>`:''}</li>`;});body+=`</ul>`;}if(p.topics?.length){body+=`<h3>Discussion</h3>`;p.topics.forEach(t=>{body+=`<h4>${esc(t.title)}</h4><ul>`;(t.points||[]).forEach(pt=>body+=`<li>${esc(pt)}</li>`);body+=`</ul>`;});}if(p.decisions?.length){body+=`<h3>Decisions</h3><ul>`;p.decisions.forEach(d=>body+=`<li>${esc(d)}</li>`);body+=`</ul>`;}if(note.transcript)body+=`<details><summary style="font-size:12px;color:#aaa;cursor:pointer">Full transcript</summary><pre style="font-size:12px;line-height:1.7;background:#f9f9f7;border-radius:8px;padding:12px;overflow-x:auto;white-space:pre-wrap;margin-top:8px;color:#444">${esc(note.transcript)}</pre></details>`;return `<article><h2>${esc(note.title||'Untitled')}</h2>${body}</article>`;}).join('\n');const title=proj?`${proj.name} — Notes Archive`:'Notes Archive';const html=`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${esc(title)}</title><style>body{font-family:system-ui,sans-serif;max-width:800px;margin:40px auto;padding:0 24px;color:#1a1a18;line-height:1.75;font-size:14px}h1{font-size:22px;font-weight:600;margin-bottom:4px}.archive-meta{font-size:13px;color:#888;margin-bottom:32px;padding-bottom:16px;border-bottom:2px solid #eee}article{margin-bottom:48px;padding-bottom:32px;border-bottom:1px solid #eee}article:last-child{border-bottom:none}h2{font-size:17px;font-weight:600;margin-bottom:6px}h3{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#999;border-bottom:1px solid #eee;padding-bottom:4px;margin:20px 0 8px}h4{font-size:13px;font-weight:500;margin:12px 0 4px}p{margin-bottom:6px}.meta{font-size:13px;color:#888;margin-bottom:12px}ul{list-style:none;padding:0;margin:0}li{padding:2px 0 2px 14px;position:relative}li::before{content:"•";position:absolute;left:0;color:#ccc}ul.todos li::before{content:none}ul.todos li{padding:5px 0;border-bottom:1px solid #f5f5f3;display:flex;align-items:flex-start;gap:8px}.cb{flex-shrink:0}.done{color:#aaa;text-decoration:line-through}em{font-style:normal;color:#888;font-size:12px;margin-left:4px}.dl{font-size:11px;background:#FEF3C7;color:#b45309;padding:1px 5px;border-radius:4px;margin-left:4px}</style></head><body><h1>${esc(title)}</h1><div class="archive-meta">Exported ${new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'})} &nbsp;·&nbsp; ${exp.length} note${exp.length!==1?'s':''}</div>${notesHtml}</body></html>`;dl(html,(proj?proj.name.replace(/[^a-z0-9]/gi,'_').toLowerCase():'all_notes')+'_export.html','text/html');}
+function exportProjectJson(projectId){const proj=projectId?getProject(projectId):null;const exp=projectId?notes.filter(n=>n.projectId===projectId):notes;if(!exp.length)return;dl(JSON.stringify({exportedAt:new Date().toISOString(),project:proj||null,notes:exp},null,2),(proj?proj.name.replace(/[^a-z0-9]/gi,'_').toLowerCase():'all_notes')+'_export.json','application/json');}
+
+// ── Helpers ───────────────────────────────────────────────────
+function extractJSON(raw){let s=raw.trim().replace(/^```[a-z]*\s*/i,'').replace(/```\s*$/,'').trim();const st=s.indexOf('{'),en=s.lastIndexOf('}');if(st!==-1&&en!==-1)s=s.slice(st,en+1);return JSON.parse(s);}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function trunc(s,n){return s.length>n?s.slice(0,n)+'…':s;}
+
+// ── Events ────────────────────────────────────────────────────
+function initEvents() {
+  // Auth
+  document.getElementById('btn-google-login').addEventListener('click', () => {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    auth.signInWithPopup(provider).catch(e => {
+      document.getElementById('login-error').textContent = e.message;
+      document.getElementById('login-error').style.display = 'block';
+    });
+  });
+  document.getElementById('btn-save-apikey').addEventListener('click', () => {
+    const key = document.getElementById('apikey-input').value.trim();
+    if (!key.startsWith('sk-ant-')) {
+      document.getElementById('apikey-error').textContent = 'Key should start with sk-ant-';
+      document.getElementById('apikey-error').style.display = 'block';
+      return;
+    }
+    setApiKey(key);
+    document.getElementById('screen-apikey').classList.add('hidden');
+    showUserPill(currentUser);
+    loadAll();
+  });
+  document.getElementById('btn-change-key').addEventListener('click', () => {
+    document.getElementById('apikey-input').value = getApiKey();
+    document.getElementById('screen-apikey').classList.remove('hidden');
+  });
+  document.getElementById('btn-signout').addEventListener('click', () => auth.signOut());
+
+  // Top bar
+  document.getElementById('btn-new-note').addEventListener('click', openImport);
+  document.getElementById('btn-new-project').addEventListener('click', openNewProject);
+
+  // Project list
+  document.getElementById('proj-list').addEventListener('click', e => {
+    const btn = e.target.closest('[data-proj-action]');
+    const item = e.target.closest('.proj-item');
+    if (btn) {
+      e.stopPropagation();
+      const id = btn.dataset.projId, action = btn.dataset.projAction;
+      if (action === 'edit') { editProject(id); }
+      else if (action === 'delete') {
+        if (btn.dataset.armed === 'true') {
+          notes = notes.filter(n => n.projectId !== id);
+          projects = projects.filter(p => p.id !== id);
+          if (activeProjectId === id) setActiveProject(null);
+          if (activeNote?.projectId === id) { activeNote=null; document.getElementById('mid-empty').style.display='flex'; document.getElementById('mid-note').style.display='none'; }
+          saveAll(); renderProjects(); renderNoteList();
+        } else {
+          btn.dataset.armed='true'; btn.style.color='#E07A5F'; btn.title='Click again to confirm';
+          setTimeout(()=>{ btn.dataset.armed='false'; btn.style.color='#855'; btn.title='Delete project'; }, 2500);
+        }
+      }
+    } else if (item) { setActiveProject(item.dataset.projId||null); }
+  });
+
+  // Project modal
+  document.getElementById('btn-close-proj').addEventListener('click', closeProjModal);
+  document.getElementById('btn-cancel-proj').addEventListener('click', closeProjModal);
+  document.getElementById('btn-save-proj').addEventListener('click', saveProject);
+  document.getElementById('proj-overlay').addEventListener('click', e => { if(e.target===e.currentTarget) closeProjModal(); });
+  document.getElementById('color-row').addEventListener('click', e => { const sw=e.target.closest('[data-color]'); if(sw){selectedProjColor=sw.dataset.color;renderColorPicker();} });
+
+  // Note list
+  document.getElementById('note-list').addEventListener('click', e => {
+    const del = e.target.closest('.note-del-btn');
+    const body = e.target.closest('.nc-body');
+    if (del) {
+      e.stopPropagation();
+      if (del.dataset.armed === 'true') { deleteNote(del.dataset.noteId); }
+      else { del.dataset.armed='true'; del.style.color='#E07A5F'; del.title='Click again to confirm'; setTimeout(()=>{ del.dataset.armed='false'; del.style.color='#bbb'; del.title='Delete'; }, 2500); }
+    } else if (body) { selectNote(body.closest('.note-card').dataset.noteId); }
+  });
+  document.getElementById('gsearch-results').addEventListener('click', e => { const card=e.target.closest('.search-result-card'); if(card){selectNote(card.dataset.noteId);clearGlobalSearch();} });
+
+  // Search
+  document.getElementById('global-search').addEventListener('input', globalSearch);
+  document.getElementById('tx-search').addEventListener('input', () => {
+    if(!activeNote)return;
+    const q=document.getElementById('tx-search').value.trim();
+    if(!q){renderTranscript(activeNote);return;}
+    const regex=new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi');
+    document.getElementById('tx-body').querySelectorAll('.tx-text').forEach(t=>{t.innerHTML=t.textContent.replace(regex,m=>`<mark>${esc(m)}</mark>`);});
+  });
+
+  // Import modal
+  document.getElementById('btn-close-import').addEventListener('click', closeImport);
+  document.getElementById('overlay').addEventListener('click', e => { if(e.target===e.currentTarget) closeImport(); });
+  document.getElementById('m-back').addEventListener('click', () => { if(mStep>1){mStep--;renderMStep();} });
+  document.getElementById('m-next').addEventListener('click', mNext);
+  document.getElementById('btn-load-sample').addEventListener('click', () => { document.getElementById('m-transcript').value=SAMPLE; document.getElementById('m-date').value='14 April 2026'; document.getElementById('m-time').value='10:00–10:25'; document.getElementById('m-loc').value='Zoom'; switchInputTab('paste'); });
+  document.querySelectorAll('.mtabs .mtab').forEach(btn => btn.addEventListener('click', () => switchInputTab(btn.dataset.tab)));
+  document.getElementById('btn-browse').addEventListener('click', e => { e.stopPropagation(); document.getElementById('fi').click(); });
+  document.getElementById('fi').addEventListener('change', e => { const f=e.target.files[0]; if(f) readFile(f); });
+  document.getElementById('btn-clear-upload').addEventListener('click', clearUpload);
+  const dz=document.getElementById('dz');
+  dz.addEventListener('click', () => document.getElementById('fi').click());
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('over'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+  dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('over'); const f=e.dataTransfer.files[0]; if(f) readFile(f); });
+  document.getElementById('m-sp-list').addEventListener('input', e => { const input=e.target.closest('[data-sp-field]'); if(input) speakerData[input.dataset.spIdx][input.dataset.spField]=input.value; });
+  document.getElementById('m-sp-list').addEventListener('click', e => { const btn=e.target.closest('[data-sp-idx].sp-rm'); if(btn){speakerData.splice(Number(btn.dataset.spIdx),1);renderModalSpeakers();} });
+  document.getElementById('btn-add-speaker').addEventListener('click', () => { manualCt++; speakerData.push({label:`Speaker ${manualCt}`,lines:[],fullName:'',role:'',color:SP_COLORS[speakerData.length%SP_COLORS.length]}); renderModalSpeakers(); });
+  document.getElementById('fmt-grid').addEventListener('click', e => { const pill=e.target.closest('[data-fmt]'); if(pill){selectedFmt=pill.dataset.fmt;document.querySelectorAll('#fmt-grid .fmt-pill').forEach(p=>p.classList.toggle('sel',p.dataset.fmt===selectedFmt));} });
+  document.getElementById('tone-grid').addEventListener('click', e => { const pill=e.target.closest('[data-tone]'); if(pill){selectedTone=pill.dataset.tone;document.querySelectorAll('#tone-grid .fmt-pill').forEach(p=>p.classList.toggle('sel',p.dataset.tone===selectedTone));} });
+
+  // Note tabs & actions
+  document.querySelectorAll('.note-tab').forEach(btn => btn.addEventListener('click', () => switchNoteTab(btn.dataset.tab)));
+  document.getElementById('ntb-summary').addEventListener('change', e => { const sel=e.target.closest('.move-note-sel'); if(sel&&activeNote){activeNote.projectId=sel.value||null;saveAll();renderProjects();renderNoteList();renderSummaryTab(activeNote);} });
+  document.getElementById('ntb-todos').addEventListener('click', e => { const cb=e.target.closest('[data-todo-idx]'); if(cb&&activeNote){const i=Number(cb.dataset.todoIdx);activeNote.parsed.todos[i].done=!activeNote.parsed.todos[i].done;saveAll();renderTodosTab(activeNote);} });
+  document.getElementById('btn-save-edit').addEventListener('click', saveEdit);
+  document.getElementById('btn-reset-edit').addEventListener('click', resetEdit);
+  document.getElementById('btn-correction').addEventListener('click', applyCorrection);
+  document.getElementById('btn-exp-txt').addEventListener('click', expTxt);
+  document.getElementById('btn-exp-md').addEventListener('click', expMd);
+  document.getElementById('btn-exp-html').addEventListener('click', expHtml);
+  document.getElementById('btn-exp-email').addEventListener('click', copyForEmail);
+  document.getElementById('btn-export-html').addEventListener('click', () => exportProjectNotes(activeProjectId));
+  document.getElementById('btn-export-json').addEventListener('click', () => exportProjectJson(activeProjectId));
+}
+
+if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', initEvents); }
+else { initEvents(); }
+</script>
+</body>
+</html>
